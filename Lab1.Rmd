@@ -1,6 +1,8 @@
 ---
 title: "Machine Learning for Economists - Assignment 1"
-output: pdf_document
+output:
+  pdf_document:
+    latex_engine: xelatex
 date: "2024-04-19"
 editor_options: 
   markdown: 
@@ -86,13 +88,17 @@ for (s in 1:nsim) {
 predictions <- data.frame(f0_ols, f0_lasso, f0_ridge)
 
 # Melting data frame for easier plotting
-predictions_long <- pivot_longer(predictions, cols = everything(), names_to = "model", values_to = "prediction")
+predictions_long <- pivot_longer(predictions, cols = everything(), 
+                                 names_to = "model", 
+                                 values_to = "prediction")
 
 # Plotting
 ggplot(predictions_long, aes(x = prediction, fill = model)) +
   geom_density(alpha = 0.5) +
-  labs(title = "Density of Predictions for OLS, LASSO, and Ridge", x = "Predicted value of f(x0)", y = "Density") +
-  scale_fill_brewer(palette = "Set1")  # Adding a color palette for better visualization
+  labs(title = "Density of Predictions for OLS, LASSO, and Ridge", 
+       x = "Predicted value of f(x0)", 
+       y = "Density") +
+  scale_fill_brewer(palette = "Set1")
 ```
 
 ```{r}
@@ -120,13 +126,87 @@ statistics <- predictions_long %>%
     .groups = 'drop'
   )
 
-# Printing the computed statistics
 print(statistics)
 ```
 
 ### 4. How do bias and variance depend on the number of irrelevant regressors?
 
-???
+```{r}
+# function to run the simulation with different number of irrelevant regressors
+run_simulation1 <- function(p) {
+  beta = c(2,3, rep(0,p-2)) # Coefficient vector
+  x0 = c(rep(2, p)) # out-of-sample observation
+  f0_ols = c()
+  f0_lasso = c()
+  f0_ridge = c()
+  for (s in 1:nsim) {
+    X = MASS::mvrnorm(nobs, #Randomly drawn X variables
+                      mu = rep(0, p),
+                      Sigma = diag(p)
+    )
+    y = X %*%beta + rnorm(nobs) # Simulate y with normal noise
+    # Fit OLS model
+    fitOLS = lm(y~X)
+    f0_ols[s] = fitOLS$coefficients%*%c(1, x0) # Prediction at x0
+    # Fit LASSO regression
+    fitLASSO = cv.glmnet(X, y, alpha = 1)
+    f0_lasso[s] = t(coef(fitLASSO, s="lambda.1se"))%*%c(1, x0) %>% as.numeric()
+    # Fit Ridge regression
+    fitRidge = cv.glmnet(X, y, alpha = 0)
+    f0_ridge[s] = t(coef(fitRidge, s="lambda.1se"))%*%c(1, x0) %>% as.numeric()
+  }
+  
+  # Data frame for plotting
+  predictions <- data.frame(f0_ols, f0_lasso, f0_ridge)
+  
+  # Melting data frame for easier plotting
+  predictions_long <- pivot_longer(predictions, 
+                                   cols = everything(), 
+                                   names_to = "model", 
+                                   values_to = "prediction")
+  
+  # True value of f(x0)
+  true_value <- 10
+  
+  # Calculate Bias, Variance, and MSE for each model
+  statistics <- predictions_long %>%
+    group_by(model) %>%
+    summarise(
+      Bias = mean(prediction) - true_value,
+      Variance = var(prediction),
+      MSE = mean((prediction - true_value)^2),
+      .groups = 'drop'
+    )
+  
+  return(statistics)
+}
+
+p_values <- c(10, 20, 30, 40, 50)
+results <- map_dfr(p_values, run_simulation1, .id = "p")
+results$p <- as.factor(results$p)
+results_long <- pivot_longer(results, 
+                             cols = c(Bias, Variance), 
+                             names_to = "statistic", 
+                             values_to = "value")
+
+ggplot(results_long, aes(x = p, y = value, fill = model)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~statistic, scales = "free_y") +
+  labs(title = "Bias and Variance for OLS, LASSO, and Ridge 
+       with different number of irrelevant regressors",
+       x = "Number of irrelevant regressors", y = "Value") +
+  scale_fill_brewer(palette = "Set1") +
+  scale_x_discrete(labels = p_values)
+
+```
+
+Interpretation:
+Bias:
+As the number of irrelevant regressors increases, the bias of OLS regression remains relatively constant. In contrast, the bias of regularized models grows with the addition of more irrelevant regressors.
+
+Variance:
+The variance of LASSO regression remains consistent as the number of irrelevant regressors increases, what can be explained by the regularization effect that drives coefficients towards zero. Conversely, the variance of OLS and Ridge regression increases with the inclusion of more irrelevant regressors.
+
 
 ### 5. How do bias and variance depend on the number of observations?
 
@@ -160,11 +240,15 @@ run_simulation <- function(nobs) {
     
     # LASSO fit
     fitLASSO <- cv.glmnet(X, y, alpha = 1)
-    results$f0_lasso[s] <- as.numeric(predict(fitLASSO, newx = matrix(x0, ncol = p), s = "lambda.1se"))
+    results$f0_lasso[s] <- as.numeric(predict(fitLASSO, 
+                                              newx = matrix(x0, ncol = p), 
+                                              s = "lambda.1se"))
     
     # Ridge fit
     fitRidge <- cv.glmnet(X, y, alpha = 0)
-    results$f0_ridge[s] <- as.numeric(predict(fitRidge, newx = matrix(x0, ncol = p), s = "lambda.1se"))
+    results$f0_ridge[s] <- as.numeric(predict(fitRidge, 
+                                              newx = matrix(x0, ncol = p), 
+                                              s = "lambda.1se"))
   }
   
   # Calculate bias and variance
@@ -189,7 +273,10 @@ nobs_values <- seq(50, 500, by = 50)
 results <- map_df(nobs_values, run_simulation)
 
 # Prepare data for plotting
-results_long <- pivot_longer(results, cols = -nobs, names_to = "model_metric", values_to = "value")
+results_long <- pivot_longer(results, 
+                             cols = -nobs, 
+                             names_to = "model_metric", 
+                             values_to = "value")
 
 # Separate metric and model
 results_long <- results_long %>% 
@@ -198,7 +285,9 @@ results_long <- results_long %>%
          metric = recode(metric, bias = "Bias", var = "Variance"))
 
 # Plotting the results
-ggplot(results_long, aes(x = nobs, y = value, group = interaction(model, metric), color = model)) +
+ggplot(results_long, 
+       aes(x = nobs, y = value, group = interaction(model, metric), 
+           color = model)) +
   geom_line() +
   facet_wrap(~metric, scales = "free_y") +
   labs(title = "Effect of Number of Observations on Bias and Variance",
@@ -218,7 +307,7 @@ Bias in OLS and Ridge reduces as more data is added, while LASSO’s bias remain
 The decrease in bias for OLS suggests the model is benefiting from more data, as it can estimate the true model parameters more accurately with larger samples.
 The slight decrease in Ridge’s bias with more observations suggests it too benefits from larger sample sizes, though its primary advantage is in variance reduction.
 
-### 6. The simulation above assumes that regressors are uncorrelated. How do results change when correlation between regressors is instead given by \\ρ > 0?
+### 6. The simulation above assumes that regressors are uncorrelated. How do results change when correlation between regressors is instead given by ρ > 0?
 
 ```{r}
 library(glmnet)
@@ -252,11 +341,15 @@ run_simulation_corr <- function(rho, nobs = 100, nsim = 100) {
     
     # LASSO fit
     fitLASSO <- cv.glmnet(X, y, alpha = 1)
-    sim_results$f0_lasso[s] <- as.numeric(predict(fitLASSO, newx = matrix(x0, ncol = p), s = "lambda.1se"))
+    sim_results$f0_lasso[s] <- as.numeric(predict(fitLASSO, 
+                                                  newx = matrix(x0, ncol = p), 
+                                                  s = "lambda.1se"))
     
     # Ridge fit
     fitRidge <- cv.glmnet(X, y, alpha = 0)
-    sim_results$f0_ridge[s] <- as.numeric(predict(fitRidge, newx = matrix(x0, ncol = p), s = "lambda.1se"))
+    sim_results$f0_ridge[s] <- as.numeric(predict(fitRidge, 
+                                                  newx = matrix(x0, ncol = p), 
+                                                  s = "lambda.1se"))
   }
   
   # Calculate bias and variance
@@ -280,10 +373,18 @@ rho_values <- seq(0, 0.9, by = 0.1)
 results_corr <- map_df(rho_values, run_simulation_corr)
 
 # Plotting the results
-results_corr_long <- pivot_longer(results_corr, cols = starts_with("bias_"), names_to = "model", values_to = "value", names_prefix = "bias_")
+results_corr_long <- pivot_longer(results_corr, 
+                                  cols = starts_with("bias_"), 
+                                  names_to = "model", 
+                                  values_to = "value", 
+                                  names_prefix = "bias_")
 results_corr_long$type <- "Bias"
 
-variance_corr_long <- pivot_longer(results_corr, cols = starts_with("var_"), names_to = "model", values_to = "value", names_prefix = "var_")
+variance_corr_long <- pivot_longer(results_corr, 
+                                   cols = starts_with("var_"), 
+                                   names_to = "model", 
+                                   values_to = "value", 
+                                   names_prefix = "var_")
 variance_corr_long$type <- "Variance"
 
 metrics_corr_long <- bind_rows(results_corr_long, variance_corr_long)
